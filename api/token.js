@@ -1,31 +1,40 @@
-// api/token.js - 华为云Token获取代理
+// api/token.js - 优化版本
 const https = require('https');
 
 module.exports = async (req, res) => {
-  // 设置CORS头，允许小程序访问
+  // 立即设置响应头，避免超时
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
-  // 处理预检请求
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
   }
 
+  // 设置超时保护
+  const timeout = setTimeout(() => {
+    if (!res.headersSent) {
+      res.status(504).json({
+        success: false,
+        error: '请求超时，请重试'
+      });
+    }
+  }, 8000); // 8秒超时
+
   try {
     console.log('开始获取华为云Token...');
     
-    // 华为云认证信息 - 在这里修改为你的实际信息
+    // 华为云认证信息 - 请确保这里填写正确
     const requestData = JSON.stringify({
       "auth": {
         "identity": {
           "methods": ["password"],
           "password": {
             "user": {
-              "name": "13427903529", // 改为你的手机号，如：13812345678
-              "password": "h20060917", // 改为你的华为云密码
+              "name": "13427903529", // 确保格式正确
+              "password": "h20060917",
               "domain": {
-                "name": "hw_008613427903529_01" // 改为：hw_008613812345678
+                "name": "hw_008613427903529_01" // 确保格式正确
               }
             }
           }
@@ -38,9 +47,7 @@ module.exports = async (req, res) => {
       }
     });
 
-    console.log('请求数据:', requestData);
-
-    // 调用华为云IAM接口
+    // 使用 Promise 包装 https 请求
     const token = await new Promise((resolve, reject) => {
       const options = {
         hostname: 'iam.cn-south-1.myhuaweicloud.com',
@@ -50,10 +57,11 @@ module.exports = async (req, res) => {
         headers: {
           'Content-Type': 'application/json',
           'Content-Length': Buffer.byteLength(requestData)
-        }
+        },
+        timeout: 5000 // 5秒超时
       };
 
-      const req = https.request(options, (response) => {
+      const request = https.request(options, (response) => {
         let data = '';
 
         response.on('data', (chunk) => {
@@ -61,31 +69,36 @@ module.exports = async (req, res) => {
         });
 
         response.on('end', () => {
-          console.log('华为云响应状态码:', response.statusCode);
-          console.log('华为云响应头:', response.headers);
+          console.log('华为云响应状态:', response.statusCode);
           
           if (response.statusCode === 201) {
             const token = response.headers['x-subject-token'];
             if (token) {
               resolve(token);
             } else {
-              reject(new Error('Token在响应头中未找到'));
+              reject(new Error('响应中未找到Token'));
             }
           } else {
-            reject(new Error(`华为云API错误: ${response.statusCode} - ${data}`));
+            reject(new Error(`华为云错误: ${response.statusCode}`));
           }
         });
       });
 
-      req.on('error', (error) => {
+      request.on('error', (error) => {
         reject(error);
       });
 
-      req.write(requestData);
-      req.end();
+      request.on('timeout', () => {
+        request.destroy();
+        reject(new Error('华为云API请求超时'));
+      });
+
+      request.write(requestData);
+      request.end();
     });
 
-    // 返回成功响应
+    clearTimeout(timeout);
+    
     res.status(200).json({
       success: true,
       token: token,
@@ -93,9 +106,9 @@ module.exports = async (req, res) => {
     });
 
   } catch (error) {
+    clearTimeout(timeout);
     console.error('获取Token失败:', error);
     
-    // 返回错误响应
     res.status(500).json({
       success: false,
       error: error.message
