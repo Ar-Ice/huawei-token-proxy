@@ -31,10 +31,10 @@ module.exports = async (req, res) => {
           "methods": ["password"],
           "password": {
             "user": {
-              "name": "13427903529", // 确保格式正确
-              "password": "h20060917",
+              "name": "", // 确保格式正确
+              "password": "",
               "domain": {
-                "name": "hw_008613427903529_01" // 确保格式正确
+                "name": "" // 确保格式正确
               }
             }
           }
